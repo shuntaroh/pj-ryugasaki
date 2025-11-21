@@ -1,263 +1,305 @@
-   #include <Adafruit_NeoPixel.h>
+#include <Adafruit_NeoPixel.h>
 
-   // =============================
-   // 設定
-   // =============================
+// =============================
+// 1. 設定・ピン定義
+// =============================
 
-   // 使用ピン
-   const int PIN_MODULE[4] = {2, 3, 4, 8};  
-   //   0: D2 (左上)
-   //   1: D3 (右上)
-   //   2: D4 (左下)
-   //   3: D8 (右下)
+// ボタンピン (GNDに接続して押すとLOWになる想定)
+const int PIN_BTN_DIFFICULT = 8; // 「龍」を選ぶボタン
+const int PIN_BTN_EASY      = 9; // 「竜」を選ぶボタン
 
-   const int MODULE_COLS = 8;
-   const int MODULE_ROWS = 8;
-   const int MODULE_LED_NUM = MODULE_COLS * MODULE_ROWS; // 64 LEDs
-   const int MODULE_COUNT = 4;
+// LEDモジュール接続ピン (左上, 右上, 左下, 右下 の順を想定)
+const int PIN_MODULE[4] = {10, 11, 12, 13};
 
-   const int MATRIX_COLS = 16;
-   const int MATRIX_ROWS = 16;
+const int MODULE_COLS = 8;
+const int MODULE_ROWS = 8;
+const int MODULE_LED_NUM = 64;
+const int MODULE_COUNT = 4;
 
-   // 全体LED = 8×8×4 = 256
-   const int LED_COUNT = MODULE_LED_NUM;
+const int MATRIX_COLS = 16;
+const int MATRIX_ROWS = 16;
 
-   // NeoPixel オブジェクト（4個）
-   Adafruit_NeoPixel modules[MODULE_COUNT] = {
-      Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[0], NEO_GRB + NEO_KHZ800),
-      Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[1], NEO_GRB + NEO_KHZ800),
-      Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[2], NEO_GRB + NEO_KHZ800),
-      Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[3], NEO_GRB + NEO_KHZ800)
-   };
+// NeoPixel オブジェクト生成
+Adafruit_NeoPixel modules[MODULE_COUNT] = {
+  Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[0], NEO_GRB + NEO_KHZ800),
+  Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[1], NEO_GRB + NEO_KHZ800),
+  Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[2], NEO_GRB + NEO_KHZ800),
+  Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[3], NEO_GRB + NEO_KHZ800)
+};
 
-   // 白の明るさ
-   const uint8_t WHITE_BASE = 2;
+// 色設定
+const uint8_t WHITE_BASE = 10; // 明るさ調整 (適宜変更してください)
+const uint8_t WHITE_COLOR[4][3] = {
+  {WHITE_BASE, WHITE_BASE, WHITE_BASE},
+  {WHITE_BASE, WHITE_BASE, WHITE_BASE},
+  {WHITE_BASE, WHITE_BASE, WHITE_BASE},
+  {WHITE_BASE, WHITE_BASE, WHITE_BASE}
+};
 
-   // モジュールごとの「白」(R,G,B)
-   // 0: 左上(D1), 1: 右上(D2), 2: 左下(D7), 3: 右下(D9)
-   const uint8_t WHITE_COLOR[4][3] = {
-      // {R, G, B}
-      {WHITE_BASE, WHITE_BASE, WHITE_BASE}, // 0: 左上（赤っぽい → R少し下げ目）
-      {WHITE_BASE, WHITE_BASE, WHITE_BASE}, // 1: 右上（緑っぽい → G少し下げ目）
-      {WHITE_BASE, WHITE_BASE, WHITE_BASE}, // 2: 左下（左側と同じ調整）
-      {WHITE_BASE, WHITE_BASE, WHITE_BASE}  // 3: 右下（右側と同じ調整）
-   };
+// =============================
+// 2. 漢字データ (16x16)
+// =============================
 
-   // =============================
-   // 関数プロトタイプ
-   // =============================
+// 「龍」 (画数多い)
+const uint8_t difficultDragon16x16[16][16] = {
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+  {0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0},
+  {0,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0},
+  {0,0,1,0,0,0,1,0,0,1,0,0,0,0,0,0},
+  {0,0,1,0,0,1,0,0,0,1,1,1,1,1,1,0},
+  {0,1,1,1,1,1,1,1,0,0,0,0,0,0,1,0},
+  {0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0},
+  {0,0,1,1,1,1,1,0,0,1,0,0,0,0,0,0},
+  {0,0,1,0,0,0,1,0,0,1,1,1,1,1,0,0},
+  {0,0,1,1,1,1,1,0,0,1,0,0,0,0,0,0},
+  {0,0,1,0,0,0,1,0,0,1,1,1,1,1,0,0},
+  {0,0,1,1,1,1,1,0,0,1,0,0,0,0,0,0},
+  {0,0,1,0,0,0,1,0,0,1,1,1,1,1,0,0},
+  {0,0,1,0,0,0,1,0,0,1,0,0,0,0,1,0},
+  {0,0,1,0,0,1,1,0,0,1,1,1,1,1,1,0},
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+};
 
-   int moduleIndexFromXY(int x, int y);
-   int indexInModule(int localX, int localY);
-   void setLedXY(int x, int y, bool on);
-   void clearAll(bool showNow = true);
-   void showAll();
+// 「竜」 (画数少ない)
+const uint8_t easyDragon16x16[16][16] = {
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+  {0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0},
+  {0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0},
+  {0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0},
+  {0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0},
+  {0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0},
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+  {0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0},
+  {0,0,0,1,0,0,0,1,1,0,0,0,1,1,0,0},
+  {0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0},
+  {0,0,0,1,0,0,0,1,1,0,0,0,1,1,0,0},
+  {0,0,0,1,0,0,0,1,1,0,0,0,1,1,0,0},
+  {0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0},
+  {0,0,0,0,0,0,0,1,1,0,0,0,0,0,1,0},
+  {0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0},
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+};
 
-   void drawImage16x16(const uint8_t img[16][16]);
-   void drawSubImage8x8(const uint8_t img[8][8], int offsetX, int offsetY);
+// 表示用バッファ (計算結果をここに入れる)
+uint8_t displayBuffer[16][16];
 
-   // =============================
-   // サンプル画像（16x16）
-   // =============================
+// =============================
+// 3. 関数プロトタイプ宣言
+// =============================
+int moduleIndexFromXY(int x, int y);
+int indexInModule(int localX, int localY);
+void setLedXY(int x, int y, bool on);
+void clearAll(bool showNow = true);
+void showAll();
+void drawImage16x16(const uint8_t img[16][16]);
 
-   const uint8_t sampleImage16x16[16][16] = {
-   {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
-   {1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1},
-   {1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1},
-   {1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1},
-   {1,0,0,0,1,0,0,0,0,0,0,1,0,0,0,1},
-   {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
-   {1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1},
-   {1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1},
-   {1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1},
-   {1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1},
-   {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
-   {1,0,0,0,1,0,0,0,0,0,0,1,0,0,0,1},
-   {1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1},
-   {1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1},
-   {1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1},
-   {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
-   };
+// 融合ロジック関数
+void createGlitchArt(const uint8_t imgA[16][16], const uint8_t imgB[16][16], uint8_t result[16][16]);
+void createNoiseArt(const uint8_t baseImg[16][16], const uint8_t noiseSource[16][16], uint8_t result[16][16], int probability);
+void createChimeraArt(const uint8_t upperImg[16][16], const uint8_t lowerImg[16][16], uint8_t result[16][16]);
 
-   const uint8_t difficultDragon16x16[16][16] = {
-   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-   {0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0},
-   {0,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0},
-   {0,0,1,0,0,0,1,0,0,1,0,0,0,0,0,0},
-   {0,0,1,0,0,1,0,0,0,1,1,1,1,1,1,0},
-   {0,1,1,1,1,1,1,1,0,0,0,0,0,0,1,0},
-   {0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0},
-   {0,0,1,1,1,1,1,0,0,1,0,0,0,0,0,0},
-   {0,0,1,0,0,0,1,0,0,1,1,1,1,1,0,0},
-   {0,0,1,1,1,1,1,0,0,1,0,0,0,0,0,0},
-   {0,0,1,0,0,0,1,0,0,1,1,1,1,1,0,0},
-   {0,0,1,1,1,1,1,0,0,1,0,0,0,0,0,0},
-   {0,0,1,0,0,0,1,0,0,1,1,1,1,1,0,0},
-   {0,0,1,0,0,0,1,0,0,1,0,0,0,0,1,0},
-   {0,0,1,0,0,1,1,0,0,1,1,1,1,1,1,0},
-   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
-   };
 
-   const uint8_t easyDragon16x16[16][16] = {
-   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-   {0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0},
-   {0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0},
-   {0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0},
-   {0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0},
-   {0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0},
-   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-   {0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0},
-   {0,0,0,1,0,0,0,1,1,0,0,0,1,1,0,0},
-   {0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0},
-   {0,0,0,1,0,0,0,1,1,0,0,0,1,1,0,0},
-   {0,0,0,1,0,0,0,1,1,0,0,0,1,1,0,0},
-   {0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0},
-   {0,0,0,0,0,0,0,1,1,0,0,0,0,0,1,0},
-   {0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0},
-   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
-   };
+// =============================
+// 4. セットアップ & ループ
+// =============================
 
-   // 8x8 の画像サンプル
-   const uint8_t sampleImage8x8[8][8] = {
-   {1,0,0,0,0,0,0,1},
-   {0,1,0,0,0,0,1,0},
-   {0,0,1,0,0,1,0,0},
-   {0,0,0,1,1,0,0,0},
-   {0,0,0,1,1,0,0,0},
-   {0,0,1,0,0,1,0,0},
-   {0,1,0,0,0,0,1,0},
-   {1,0,0,0,0,0,0,1},
-   };
+void setup() {
+  // ボタン設定 (プルアップ)
+  pinMode(PIN_BTN_DIFFICULT, INPUT_PULLUP);
+  pinMode(PIN_BTN_EASY,      INPUT_PULLUP);
+  
+  // ランダムシード
+  randomSeed(analogRead(0));
 
-   // =============================
-   // setup / loop
-   // =============================
+  // LED初期化
+  for (int i = 0; i < MODULE_COUNT; i++) {
+    modules[i].begin();
+    modules[i].clear();
+    modules[i].show();
+  }
+  
+  // 起動時に一度クリア
+  clearAll(true);
+}
 
-   void setup() {
-      for (int i = 0; i < MODULE_COUNT; i++) {
-         modules[i].begin();
-         modules[i].clear();
-         modules[i].show();
-      }
-   }
+void loop() {
+  // ボタンの状態を取得 (押されると LOW)
+  bool btnDiff = (digitalRead(PIN_BTN_DIFFICULT) == LOW);
+  bool btnEasy = (digitalRead(PIN_BTN_EASY) == LOW);
 
-   void loop() {
-      clearAll(false);
-      drawImage16x16(sampleImage16x16);
-      delay(2000);
-      clearAll();
-      delay(500);
+  if (btnDiff || btnEasy) {
+    // --------------------------------------------------
+    // どちらかのボタンが押された時の処理
+    // --------------------------------------------------
+    
+    // 1. フラッシュ演出 (入力反応)
+    clearAll(false);
+    showAll(); 
+    delay(50); 
 
-      clearAll(false);
-      drawSubImage8x8(sampleImage8x8, 0, 0); // 左上
-      showAll();
-      delay(2000);
+    // 2. どの融合モードを使うかランダムに決める (デモ用)
+    //    0: グリッチ, 1: ノイズ, 2: キメラ
+    int mode = random(3);
 
-      clearAll(false);
-      drawSubImage8x8(sampleImage8x8, 8, 8); // 右下
-      showAll();
-      delay(2000);
-
-      clearAll(false);
-      drawImage16x16(difficultDragon16x16);
-      delay(2000);
-      clearAll(false);
-      delay(500);
-
-      clearAll(false);
-      drawImage16x16(easyDragon16x16);
-      delay(2000);
-      clearAll(false);
-      delay(500);
-
-      fillAll();
-      delay(2000);
-   }
-
-   // =============================
-   // LED マッピング処理
-   // =============================
-
-   // 0: 左上(D1)
-   // 1: 右上(D2)
-   // 2: 左下(D7)
-   // 3: 右下(D9)
-   int moduleIndexFromXY(int x, int y) {
-      bool top = (y < 8);
-      bool left = (x < 8);
-
-      if (top && left) return 0;
-      if (top && !left) return 1;
-      if (!top && left) return 2;
-      return 3;
-   }
-
-   // モジュール内 8×8 の座標を LED インデックスに変換
-   int indexInModule(int localX, int localY) {
-      return localY * MODULE_COLS + localX;
-   }
-
-   // (x,y) の LED を ON/OFF する
-   void setLedXY(int x, int y, bool on) {
-      if (x < 0 || x >= 16 || y < 0 || y >= 16) return;
-
-      int m = moduleIndexFromXY(x, y);
-      int localX = x % 8;
-      int localY = y % 8;
-      int idx = indexInModule(localX, localY);
-
-      if (on) {
-         uint8_t r = WHITE_COLOR[m][0];
-         uint8_t g = WHITE_COLOR[m][1];
-         uint8_t b = WHITE_COLOR[m][2];
-         modules[m].setPixelColor(idx, modules[m].Color(r, g, b));
+    if (mode == 0) {
+      // 【グリッチ融合】: XORで2つを混ぜる
+      createGlitchArt(difficultDragon16x16, easyDragon16x16, displayBuffer);
+      
+    } else if (mode == 1) {
+      // 【ノイズ融合】: 選んだ方をベースに、選ばなかった方をノイズとして混ぜる
+      if (btnDiff) {
+         // 龍がベース、竜がノイズ
+         createNoiseArt(difficultDragon16x16, easyDragon16x16, displayBuffer, 30); // 30%の確率で混ざる
       } else {
-         modules[m].setPixelColor(idx, 0);
+         // 竜がベース、龍がノイズ
+         createNoiseArt(easyDragon16x16, difficultDragon16x16, displayBuffer, 30);
       }
-   }
-
-   // =============================
-   // 表示系関数
-   // =============================
-
-   void showAll() {
-      for (int i = 0; i < MODULE_COUNT; i++) {
-         modules[i].show();
+      
+    } else if (mode == 2) {
+      // 【キメラ融合】: 上半分と下半分を合体
+      if (btnDiff) {
+         // 上が龍、下が竜
+         createChimeraArt(difficultDragon16x16, easyDragon16x16, displayBuffer);
+      } else {
+         // 上が竜、下が龍
+         createChimeraArt(easyDragon16x16, difficultDragon16x16, displayBuffer);
       }
-   }
+    }
 
-   void clearAll(bool showNow) {
-      for (int i = 0; i < MODULE_COUNT; i++) {
-         modules[i].clear();
-         if (showNow) modules[i].show();
+    // 3. 結果を描画
+    drawImage16x16(displayBuffer);
+
+    // 4. しばらく表示してから消す、または次の入力まで待つ
+    //    ここではチャタリング防止も兼ねて少し待つ
+    delay(1000); 
+    
+    // 必要であればここで clearAll() して待機状態に戻す
+    // clearAll(true);
+
+  } else {
+    // 何も押されていない時
+    // 待機アニメーションなどを入れるならここ
+    // 例: 1秒おきに「龍」と「竜」を交互に表示するなど
+  }
+}
+
+
+// =============================
+// 5. 融合アルゴリズムの実装
+// =============================
+
+/**
+ * 【グリッチ融合】
+ * 2つの画像の排他的論理和(XOR)をとる。
+ * 重なっている部分は消え、ズレている部分だけが残るデジタルな表現。
+ */
+void createGlitchArt(const uint8_t imgA[16][16], const uint8_t imgB[16][16], uint8_t result[16][16]) {
+  for (int y = 0; y < 16; y++) {
+    for (int x = 0; x < 16; x++) {
+      // 両方1なら0、片方だけ1なら1
+      bool valA = (imgA[y][x] != 0);
+      bool valB = (imgB[y][x] != 0);
+      result[y][x] = (valA ^ valB) ? 1 : 0;
+    }
+  }
+}
+
+/**
+ * 【確率的ノイズ融合】
+ * baseImg を基本としつつ、noiseSource の画素を確率的に混ぜ込む。
+ * probability (0-100): noiseSourceの画素が上書きされる確率
+ */
+void createNoiseArt(const uint8_t baseImg[16][16], const uint8_t noiseSource[16][16], uint8_t result[16][16], int probability) {
+  for (int y = 0; y < 16; y++) {
+    for (int x = 0; x < 16; x++) {
+      // まずベースをコピー
+      result[y][x] = baseImg[y][x];
+
+      // ノイズソース側にドットがある場合、一定確率でそれを採用(または反転)させる
+      if (noiseSource[y][x] != 0) {
+        if (random(100) < probability) {
+           // ノイズソースの情報を上書き (1にする、あるいは反転する等)
+           // ここでは「混ざる」表現として反転させてみる
+           result[y][x] = !result[y][x]; 
+        }
       }
-   }
+    }
+  }
+}
 
-   void drawImage16x16(const uint8_t img[16][16]) {
-      for (int y = 0; y < 16; y++) {
-         for (int x = 0; x < 16; x++) {
-            setLedXY(x, y, img[y][x] != 0);
-         }
+/**
+ * 【構造的キメラ融合】
+ * 画面を上下に分割し、異なる漢字を結合する。
+ * y=0-7: upperImg, y=8-15: lowerImg
+ */
+void createChimeraArt(const uint8_t upperImg[16][16], const uint8_t lowerImg[16][16], uint8_t result[16][16]) {
+  for (int y = 0; y < 16; y++) {
+    for (int x = 0; x < 16; x++) {
+      if (y < 8) {
+        result[y][x] = upperImg[y][x];
+      } else {
+        result[y][x] = lowerImg[y][x];
       }
-      showAll();
-   }
-
-   // 8×8 の画像を offsetX, offsetY に描画
-   void drawSubImage8x8(const uint8_t img[8][8], int offsetX, int offsetY) {
-      for (int y = 0; y < 8; y++) {
-         for (int x = 0; x < 8; x++) {
-            setLedXY(offsetX + x, offsetY + y, img[y][x] != 0);
-         }
-      }
-   }
-
-   void fillAll() {
-      for (int y = 0; y < 16; y++) {
-         for (int x = 0; x < 16; x++) {
-            setLedXY(x, y, true);
-         }
-      }
-      showAll();
-   }
+    }
+  }
+}
 
 
+// =============================
+// 6. 描画系ヘルパー関数
+// =============================
+
+// モジュール番号判定 (0:左上, 1:右上, 2:左下, 3:右下)
+int moduleIndexFromXY(int x, int y) {
+  bool top = (y < 8);
+  bool left = (x < 8);
+
+  if (top && left) return 0;
+  if (top && !left) return 1;
+  if (!top && left) return 2;
+  return 3;
+}
+
+// モジュール内のLED番号計算
+int indexInModule(int localX, int localY) {
+  return localY * MODULE_COLS + localX;
+}
+
+// 1ドットの点灯制御
+void setLedXY(int x, int y, bool on) {
+  if (x < 0 || x >= 16 || y < 0 || y >= 16) return;
+
+  int m = moduleIndexFromXY(x, y);
+  int localX = x % 8;
+  int localY = y % 8;
+  int idx = indexInModule(localX, localY);
+
+  if (on) {
+    uint8_t r = WHITE_COLOR[m][0];
+    uint8_t g = WHITE_COLOR[m][1];
+    uint8_t b = WHITE_COLOR[m][2];
+    modules[m].setPixelColor(idx, modules[m].Color(r, g, b));
+  } else {
+    modules[m].setPixelColor(idx, 0);
+  }
+}
+
+void showAll() {
+  for (int i = 0; i < MODULE_COUNT; i++) modules[i].show();
+}
+
+void clearAll(bool showNow) {
+  for (int i = 0; i < MODULE_COUNT; i++) {
+    modules[i].clear();
+    if (showNow) modules[i].show();
+  }
+}
+
+void drawImage16x16(const uint8_t img[16][16]) {
+  for (int y = 0; y < 16; y++) {
+    for (int x = 0; x < 16; x++) {
+      setLedXY(x, y, img[y][x] != 0);
+    }
+  }
+  showAll();
+}
