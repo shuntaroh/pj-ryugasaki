@@ -8,7 +8,7 @@
 const int PIN_BTN_DIFFICULT = 8; // 「龍」を選ぶボタン
 const int PIN_BTN_EASY      = 9; // 「竜」を選ぶボタン
 
-// LEDモジュール接続ピン (左上, 右上, 左下, 右下 の順を想定)
+// LEDモジュール接続ピン (左上, 右上, 左下, 右下)
 const int PIN_MODULE[4] = {10, 11, 12, 13};
 
 const int MODULE_COLS = 8;
@@ -19,7 +19,7 @@ const int MODULE_COUNT = 4;
 const int MATRIX_COLS = 16;
 const int MATRIX_ROWS = 16;
 
-// NeoPixel オブジェクト生成
+// NeoPixel オブジェクト
 Adafruit_NeoPixel modules[MODULE_COUNT] = {
   Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[0], NEO_GRB + NEO_KHZ800),
   Adafruit_NeoPixel(MODULE_LED_NUM, PIN_MODULE[1], NEO_GRB + NEO_KHZ800),
@@ -28,12 +28,22 @@ Adafruit_NeoPixel modules[MODULE_COUNT] = {
 };
 
 // 色設定
-const uint8_t WHITE_BASE = 10; // 明るさ調整 (適宜変更してください)
+const uint8_t WHITE_BASE = 10; // 明るさ
+
 const uint8_t WHITE_COLOR[4][3] = {
-  {WHITE_BASE, WHITE_BASE, WHITE_BASE},
-  {WHITE_BASE, WHITE_BASE, WHITE_BASE},
-  {WHITE_BASE, WHITE_BASE, WHITE_BASE},
-  {WHITE_BASE, WHITE_BASE, WHITE_BASE}
+// {R, G, B}
+  
+  // --- 上の段 (No.0, 1) ---
+  // 「緑」は引き続き抑えつつ(0.6)、
+  // 「ほんの少し赤」を消すために R を少し下げます(0.85)
+  {(uint8_t)(WHITE_BASE * 0.85), (uint8_t)(WHITE_BASE * 0.6), WHITE_BASE}, 
+  {(uint8_t)(WHITE_BASE * 0.85), (uint8_t)(WHITE_BASE * 0.6), WHITE_BASE}, 
+
+  // --- 下の段 (No.2, 3) ---
+  // 「赤」は引き続き抑えつつ(0.6)、
+  // 「青」が強すぎたので B も下げます(0.6)
+  {(uint8_t)(WHITE_BASE * 0.6), WHITE_BASE, (uint8_t)(WHITE_BASE * 0.6)}, 
+  {(uint8_t)(WHITE_BASE * 0.6), WHITE_BASE, (uint8_t)(WHITE_BASE * 0.6)}
 };
 
 // =============================
@@ -80,147 +90,106 @@ const uint8_t easyDragon16x16[16][16] = {
   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
 };
 
-// 表示用バッファ (計算結果をここに入れる)
-uint8_t displayBuffer[16][16];
+// =============================
+// 3. 状態管理用バッファ
+// =============================
+
+// 現在表示されている状態を保持するバッファ
+uint8_t currentBuffer[16][16];
 
 // =============================
-// 3. 関数プロトタイプ宣言
+// 4. 関数プロトタイプ
 // =============================
+void applyNoiseEvolution(uint8_t current[16][16], const uint8_t target[16][16], int intensity);
+void applyGlitchEvolution(uint8_t current[16][16], const uint8_t target[16][16]);
+void drawImage16x16(const uint8_t img[16][16]);
+void setLedXY(int x, int y, bool on);
+void clearAll(bool showNow);
+void showAll();
 int moduleIndexFromXY(int x, int y);
 int indexInModule(int localX, int localY);
-void setLedXY(int x, int y, bool on);
-void clearAll(bool showNow = true);
-void showAll();
-void drawImage16x16(const uint8_t img[16][16]);
-
-// 融合ロジック関数
-void createGlitchArt(const uint8_t imgA[16][16], const uint8_t imgB[16][16], uint8_t result[16][16]);
-void createNoiseArt(const uint8_t baseImg[16][16], const uint8_t noiseSource[16][16], uint8_t result[16][16], int probability);
-void createChimeraArt(const uint8_t upperImg[16][16], const uint8_t lowerImg[16][16], uint8_t result[16][16]);
-
 
 // =============================
-// 4. セットアップ & ループ
+// 5. setup / loop
 // =============================
 
 void setup() {
-  // ボタン設定 (プルアップ)
   pinMode(PIN_BTN_DIFFICULT, INPUT_PULLUP);
   pinMode(PIN_BTN_EASY,      INPUT_PULLUP);
   
-  // ランダムシード
   randomSeed(analogRead(0));
 
-  // LED初期化
   for (int i = 0; i < MODULE_COUNT; i++) {
     modules[i].begin();
     modules[i].clear();
     modules[i].show();
   }
   
-  // 起動時に一度クリア
-  clearAll(true);
+  // 初期状態：真っ黒（あるいはランダムノイズでも可）
+  // ここでは真っ黒からスタート
+  for(int y=0; y<16; y++) for(int x=0; x<16; x++) currentBuffer[y][x] = 0;
+  drawImage16x16(currentBuffer);
 }
 
 void loop() {
-  // ボタンの状態を取得 (押されると LOW)
   bool btnDiff = (digitalRead(PIN_BTN_DIFFICULT) == LOW);
   bool btnEasy = (digitalRead(PIN_BTN_EASY) == LOW);
 
+  // どちらかのボタンが押されたら進化処理
   if (btnDiff || btnEasy) {
-    // --------------------------------------------------
-    // どちらかのボタンが押された時の処理
-    // --------------------------------------------------
     
-    // 1. フラッシュ演出 (入力反応)
-    clearAll(false);
-    showAll(); 
-    delay(50); 
-
-    // 2. どの融合モードを使うかランダムに決める (デモ用)
-    //    0: グリッチ, 1: ノイズ, 2: キメラ
-    int mode = random(3);
-
-    if (mode == 0) {
-      // 【グリッチ融合】: XORで2つを混ぜる
-      createGlitchArt(difficultDragon16x16, easyDragon16x16, displayBuffer);
-      
-    } else if (mode == 1) {
-      // 【ノイズ融合】: 選んだ方をベースに、選ばなかった方をノイズとして混ぜる
-      if (btnDiff) {
-         // 龍がベース、竜がノイズ
-         createNoiseArt(difficultDragon16x16, easyDragon16x16, displayBuffer, 30); // 30%の確率で混ざる
-      } else {
-         // 竜がベース、龍がノイズ
-         createNoiseArt(easyDragon16x16, difficultDragon16x16, displayBuffer, 30);
-      }
-      
-    } else if (mode == 2) {
-      // 【キメラ融合】: 上半分と下半分を合体
-      if (btnDiff) {
-         // 上が龍、下が竜
-         createChimeraArt(difficultDragon16x16, easyDragon16x16, displayBuffer);
-      } else {
-         // 上が竜、下が龍
-         createChimeraArt(easyDragon16x16, difficultDragon16x16, displayBuffer);
-      }
+    // ターゲット（目指すべき姿）を決める
+    const uint8_t (*target)[16]; // ポインタ宣言
+    if (btnDiff) {
+      target = difficultDragon16x16;
+    } else {
+      target = easyDragon16x16;
     }
 
-    // 3. 結果を描画
-    drawImage16x16(displayBuffer);
+    // エフェクトの種類をランダムで決める (0: Noise, 1: Glitch)
+    // 混ぜることで「多様な変化」を見せる
+    int effectType = random(2); 
 
-    // 4. しばらく表示してから消す、または次の入力まで待つ
-    //    ここではチャタリング防止も兼ねて少し待つ
-    delay(1000); 
+    if (effectType == 0) {
+      // 【Noise Evolution】
+      // ドット単位でパラパラとターゲットに変化する
+      // intensity: 一度に変化する量 (大きいほど早くターゲットになる)
+      applyNoiseEvolution(currentBuffer, target, 15); 
+    } else {
+      // 【Glitch Evolution】
+      // 行・列・ブロック単位でバサッとターゲットに変化する
+      applyGlitchEvolution(currentBuffer, target);
+    }
+
+    // 更新されたバッファを描画
+    drawImage16x16(currentBuffer);
+
+    // 連続入力の制御（少し待つ）
+    delay(150); 
     
-    // 必要であればここで clearAll() して待機状態に戻す
-    // clearAll(true);
-
-  } else {
-    // 何も押されていない時
-    // 待機アニメーションなどを入れるならここ
-    // 例: 1秒おきに「龍」と「竜」を交互に表示するなど
+    // ボタン押しっぱなしでも連続で変化するようにしたい場合は
+    // ここでボタンが離されるのを待つ処理は入れない
   }
 }
 
-
 // =============================
-// 5. 融合アルゴリズムの実装
+// 6. 進化・融合ロジック (収束型)
 // =============================
 
 /**
- * 【グリッチ融合】
- * 2つの画像の排他的論理和(XOR)をとる。
- * 重なっている部分は消え、ズレている部分だけが残るデジタルな表現。
+ * 【Noise Evolution】 (粒子変化)
+ * 現在の画像(current)を見て、ターゲット(target)と違うドットがあれば、
+ * 指定した確率(intensity %)でターゲットの色に上書きする。
+ * -> 繰り返すと徐々にターゲットと完全一致していく。
  */
-void createGlitchArt(const uint8_t imgA[16][16], const uint8_t imgB[16][16], uint8_t result[16][16]) {
+void applyNoiseEvolution(uint8_t current[16][16], const uint8_t target[16][16], int intensity) {
   for (int y = 0; y < 16; y++) {
     for (int x = 0; x < 16; x++) {
-      // 両方1なら0、片方だけ1なら1
-      bool valA = (imgA[y][x] != 0);
-      bool valB = (imgB[y][x] != 0);
-      result[y][x] = (valA ^ valB) ? 1 : 0;
-    }
-  }
-}
-
-/**
- * 【確率的ノイズ融合】
- * baseImg を基本としつつ、noiseSource の画素を確率的に混ぜ込む。
- * probability (0-100): noiseSourceの画素が上書きされる確率
- */
-void createNoiseArt(const uint8_t baseImg[16][16], const uint8_t noiseSource[16][16], uint8_t result[16][16], int probability) {
-  for (int y = 0; y < 16; y++) {
-    for (int x = 0; x < 16; x++) {
-      // まずベースをコピー
-      result[y][x] = baseImg[y][x];
-
-      // ノイズソース側にドットがある場合、一定確率でそれを採用(または反転)させる
-      if (noiseSource[y][x] != 0) {
-        if (random(100) < probability) {
-           // ノイズソースの情報を上書き (1にする、あるいは反転する等)
-           // ここでは「混ざる」表現として反転させてみる
-           result[y][x] = !result[y][x]; 
+      // もし現在の色がターゲットと違うなら
+      if (current[y][x] != target[y][x]) {
+        // 確率で修正する
+        if (random(100) < intensity) {
+          current[y][x] = target[y][x];
         }
       }
     }
@@ -228,32 +197,57 @@ void createNoiseArt(const uint8_t baseImg[16][16], const uint8_t noiseSource[16]
 }
 
 /**
- * 【構造的キメラ融合】
- * 画面を上下に分割し、異なる漢字を結合する。
- * y=0-7: upperImg, y=8-15: lowerImg
+ * 【Glitch Evolution】 (ブロック/ライン変化)
+ * ドット単位ではなく、「行」や「列」、あるいは「矩形ブロック」単位で
+ * ターゲットの情報を強制的にコピーする。
+ * デジタルノイズのような不連続な変化を生む。
  */
-void createChimeraArt(const uint8_t upperImg[16][16], const uint8_t lowerImg[16][16], uint8_t result[16][16]) {
-  for (int y = 0; y < 16; y++) {
-    for (int x = 0; x < 16; x++) {
-      if (y < 8) {
-        result[y][x] = upperImg[y][x];
-      } else {
-        result[y][x] = lowerImg[y][x];
+void applyGlitchEvolution(uint8_t current[16][16], const uint8_t target[16][16]) {
+  int glitchMode = random(3); // 0:行コピー, 1:列コピー, 2:ブロックコピー
+
+  if (glitchMode == 0) {
+    // ランダムな数行をターゲットと同じにする (水平グリッチ)
+    int numLines = random(1, 4); // 1〜3行
+    for(int i=0; i<numLines; i++){
+      int y = random(16);
+      for(int x=0; x<16; x++) {
+        current[y][x] = target[y][x];
+      }
+    }
+  } 
+  else if (glitchMode == 1) {
+    // ランダムな数列をターゲットと同じにする (垂直グリッチ)
+    int numCols = random(1, 4);
+    for(int i=0; i<numCols; i++){
+      int x = random(16);
+      for(int y=0; y<16; y++) {
+        current[y][x] = target[y][x];
+      }
+    }
+  }
+  else {
+    // ランダムな矩形領域をコピーする (ブロックノイズ)
+    int startX = random(16);
+    int startY = random(16);
+    int w = random(4, 9); // 幅
+    int h = random(2, 5); // 高さ
+    
+    for(int y = startY; y < startY + h && y < 16; y++){
+      for(int x = startX; x < startX + w && x < 16; x++){
+        current[y][x] = target[y][x];
       }
     }
   }
 }
 
-
 // =============================
-// 6. 描画系ヘルパー関数
+// 7. 描画系ヘルパー関数
 // =============================
 
 // モジュール番号判定 (0:左上, 1:右上, 2:左下, 3:右下)
 int moduleIndexFromXY(int x, int y) {
   bool top = (y < 8);
   bool left = (x < 8);
-
   if (top && left) return 0;
   if (top && !left) return 1;
   if (!top && left) return 2;
@@ -266,15 +260,40 @@ int indexInModule(int localX, int localY) {
 }
 
 // 1ドットの点灯制御
+// (x,y) の LED を ON/OFF する（90度回転対応版）
 void setLedXY(int x, int y, bool on) {
+  // 範囲外チェック
   if (x < 0 || x >= 16 || y < 0 || y >= 16) return;
 
-  int m = moduleIndexFromXY(x, y);
-  int localX = x % 8;
-  int localY = y % 8;
+  // ==========================================
+  // 1. 座標の回転処理 (ここで向きを変えます)
+  // ==========================================
+  
+  // 【時計回り (CW) に90度回転】
+  //  (作品を右に90度倒して設置する場合)
+  int rx = 15 - y;
+  int ry = x;
+
+  // もし逆向き（反時計回り）だった場合は、上記をコメントアウトしてこちらを使ってください
+  // int rx = y;
+  // int ry = 15 - x;
+
+  // ==========================================
+  // 2. 物理的なモジュール・LED位置の特定
+  // ==========================================
+  // ※これ以降は回転後の rx, ry を使います
+
+  int m = moduleIndexFromXY(rx, ry);
+  int localX = rx % 8;
+  int localY = ry % 8;
   int idx = indexInModule(localX, localY);
 
+  // ==========================================
+  // 3. 点灯・色指定 (キャリブレーション適用)
+  // ==========================================
+  
   if (on) {
+    // 各モジュールごとの補正色を取得
     uint8_t r = WHITE_COLOR[m][0];
     uint8_t g = WHITE_COLOR[m][1];
     uint8_t b = WHITE_COLOR[m][2];
